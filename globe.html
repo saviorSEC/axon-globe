@@ -13,7 +13,8 @@
   html,body{height:100%;background:var(--bg);color:var(--text);
     font-family:"JetBrains Mono","Fira Code",ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
   #globe{position:fixed;inset:0}
-  canvas{display:block}
+  canvas{display:block;cursor:grab}
+  canvas:active{cursor:grabbing}
   .hud{position:fixed;top:18px;left:18px;z-index:10;pointer-events:none}
   .hud .title{font-size:16px;font-weight:700;letter-spacing:2px;color:#eaf4ee}
   .hud .sub{font-size:10px;letter-spacing:3px;color:var(--dim);margin-top:4px;text-transform:uppercase}
@@ -28,28 +29,39 @@
   #search:focus{border-color:var(--accent)}
   #legend{position:fixed;bottom:18px;left:18px;z-index:10;background:var(--panel);
     border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:9.5px;
-    letter-spacing:1px;backdrop-filter:blur(6px);max-width:240px}
+    letter-spacing:1px;backdrop-filter:blur(6px);max-width:250px}
   #legend .h{color:var(--accent);letter-spacing:2px;margin-bottom:8px;font-size:10px}
   #legend div{display:flex;align-items:center;gap:8px;margin:4px 0;color:var(--dim)}
   #legend i{width:8px;height:8px;border-radius:50%;display:inline-block;box-shadow:0 0 6px currentColor;flex-shrink:0}
-  #legend .globe-link{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+  #legend .links{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
   #legend a{color:var(--accent);text-decoration:none;font-size:9.5px;letter-spacing:1.5px}
-  #detail{position:fixed;bottom:18px;right:18px;z-index:20;width:330px;max-height:60vh;overflow-y:auto;
+  /* detail panel — clickable, safe */
+  #detail{position:fixed;bottom:18px;right:18px;z-index:20;width:340px;max-height:62vh;overflow-y:auto;
     background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
     display:none;backdrop-filter:blur(8px);font-size:11px;line-height:1.6}
-  #detail .dt{font-size:13px;font-weight:700;color:#eaf4ee;margin-bottom:2px}
+  #detail .dt{font-size:13px;font-weight:700;color:#eaf4ee;margin-bottom:2px;padding-right:18px}
   #detail .dz{font-size:9px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:8px}
   #detail .kv{display:flex;gap:10px;margin:5px 0}
   #detail .k{color:var(--dim);flex-shrink:0;min-width:70px;text-transform:uppercase;font-size:9px;letter-spacing:1px;padding-top:2px}
   #detail .v{color:var(--text);word-break:break-word}
-  #detail .close{position:absolute;top:8px;right:10px;color:var(--dim);cursor:pointer;font-size:14px;background:none;border:none}
+  #detail .close{position:absolute;top:8px;right:10px;color:var(--dim);cursor:pointer;font-size:16px;background:none;border:none}
   #detail .close:hover{color:var(--accent)}
+  #detail .member{cursor:pointer;padding:3px 6px;border-bottom:1px solid rgba(0,229,255,.06)}
+  #detail .member:hover{background:rgba(0,229,255,.08)}
+  #detail .member .r{color:var(--dim);font-size:9px}
   .tip{position:fixed;z-index:30;pointer-events:none;background:rgba(4,6,12,.92);border:1px solid var(--line);
-    padding:8px 12px;font-size:10px;letter-spacing:1px;border-radius:4px;display:none;max-width:320px}
+    padding:8px 12px;font-size:10px;letter-spacing:1px;border-radius:4px;display:none;max-width:340px}
   .tip .t{color:#eaf4ee;font-weight:700;font-size:11px;margin-bottom:3px}
   .tip .s{color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:2px}
   #noresults{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--dim);
     font-size:11px;letter-spacing:2px;display:none;z-index:15;text-transform:uppercase}
+  @media (max-width:768px){
+    .hud{top:10px;left:10px;max-width:60vw}
+    .stats{top:10px;right:10px}
+    #search{top:64px;right:10px;width:55vw}
+    #legend{bottom:10px;left:10px;max-width:46vw}
+    #detail{bottom:0;right:0;left:0;width:100%;max-height:55vh;border-radius:12px 12px 0 0}
+  }
 </style>
 </head>
 <body>
@@ -72,7 +84,7 @@
 <div id="legend">
   <div class="h">ZONES</div>
   <div id="zone-list"></div>
-  <div class="globe-link"><a href="https://saviorsec.github.io/axon-galaxy/" target="_blank">◈ GALAXY VIEW (2D) →</a></div>
+  <div class="links"><a href="https://saviorsec.github.io/axon-network/" target="_blank">◈ INTERNAL GALAXY →</a><a href="https://saviorsec.github.io/axon-galaxy/" target="_blank">◈ GALAXY 2D →</a></div>
 </div>
 
 <div id="detail"><button class="close" onclick="document.getElementById('detail').style.display='none'">✕</button><div id="detail-body"></div></div>
@@ -83,9 +95,10 @@
 <script>
 const ARCHIVE = __DATA__;
 
-const zones = Object.fromEntries(ARCHIVE.zones.map(z => [z.id, z]));
+const zoneOf = Object.fromEntries(ARCHIVE.zones.map(z => [z.id, z]));
 const services = ARCHIVE.services;
 const links = ARCHIVE.links;
+const esc = s => String(s ?? "").replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // ---- geographic anchors (from DNS + IP geolocation, 2026-08-19) ----
 const GEO = {
@@ -123,7 +136,7 @@ const GEO = {
   "s-fusus-eur":        {lat:53.35, lng:-6.26},
   "s-fusus":            {lat:33.75, lng:-84.39},
   "s-fusus-de":         {lat:50.14, lng:8.70},
-  "s-assist":           {lat:47.58, lng:-122.36},
+  "s-fusus-assist":     {lat:47.58, lng:-122.36},
   "s-carbyne":          {lat:32.08, lng:34.78},
   "s-3si":              {lat:37.34, lng:-121.89},
   "s-rapidsos":         {lat:45.90, lng:-119.75},
@@ -141,7 +154,7 @@ const GEO = {
   "s-dedrone-adsb":     {lat:50.12, lng:8.64}
 };
 
-// jitter same-region points so clusters are readable
+// jitter same-region points
 const seen = {};
 services.forEach(s => {
   const g = GEO[s.id] || {lat:0, lng:0};
@@ -151,11 +164,23 @@ services.forEach(s => {
   s._lng = g.lng + (n - 1) * 0.12;
 });
 
-const colorOf = s => zones[s.zone] ? zones[s.zone].color : "#94a3b8";
-const sizeOf = s => {
-  if (s.role.includes("MAIN") || s.role.includes("OIDC") || s.role.includes("C2")) return 0.9;
-  if (s.role.includes("GATEWAY") || s.role.includes("PORTAL")) return 0.65;
-  return 0.42;
+// zone markers: clickable planets at each zone's service centroid
+const zoneMarkers = ARCHIVE.zones.map(z => {
+  const members = services.filter(s => s.zone === z.id && GEO[s.id]);
+  let lat = 0, lng = 0, n = 0;
+  members.forEach(m => { lat += m._lat; lng += m._lng; n++; });
+  if (!n) return null;
+  return { id: z.id, _isZone: true, name: z.name, zone: z.id, color: z.color,
+           role: "ZONE HUB — " + members.length + " services", note: z.note,
+           _lat: lat / n, _lng: lng / n };
+}).filter(Boolean);
+
+const allPoints = [...zoneMarkers, ...services];
+const colorOf = p => p._isZone ? p.color : (zoneOf[p.zone] ? zoneOf[p.zone].color : "#94a3b8");
+const sizeOf = p => {
+  if (p._isZone) return 1.6;
+  if (/MAIN|OIDC|GATEWAY|C2|PORTAL/.test(p.role || "")) return 0.85;
+  return 0.55;
 };
 
 const globe = Globe()
@@ -164,7 +189,7 @@ const globe = Globe()
   .backgroundColor('#04060c')
   .pointOfView({lat: 38, lng: -80, altitude: 1.9});
 
-// arcs between linked services (that both have geo)
+// arcs (data streams) between geolocated linked services
 const arcs = [];
 links.forEach(l => {
   const a = services.find(s => s.id === l[0]);
@@ -172,67 +197,80 @@ links.forEach(l => {
   if (!a || !b) return;
   const ga = GEO[a.id], gb = GEO[b.id];
   if (!ga || !gb) return;
-  if (Math.abs(ga.lat - gb.lat) < 0.3 && Math.abs(ga.lng - gb.lng) < 0.3) return; // skip same-region
+  if (Math.abs(ga.lat - gb.lat) < 0.3 && Math.abs(ga.lng - gb.lng) < 0.3) return;
   arcs.push({startLat: ga.lat, startLng: ga.lng, endLat: gb.lat, endLng: gb.lng,
-             color: a === b ? zones[a.zone].color : colorOf(a),
-             service: a.name});
+             color: colorOf(a), service: a.name});
 });
 globe.arcsData(arcs)
   .arcColor(d => d.color)
-  .arcDashLength(0.35)
-  .arcDashGap(2.5)
-  .arcDashAnimateTime(2200)
-  .arcStroke(0.32)
-  .arcAltitudeAutoScale(0.28);
+  .arcDashLength(0.4)
+  .arcDashGap(2.8)
+  .arcDashAnimateTime(2600)
+  .arcStroke(0.28)
+  .arcAltitudeAutoScale(0.22);
 
 globe(document.getElementById('globe'))
-  .pointsData(services)
+  .pointsData(allPoints)
   .pointLat(d => d._lat)
   .pointLng(d => d._lng)
   .pointColor(d => colorOf(d))
-  .pointAltitude(d => sizeOf(d))
-  .pointRadius(d => sizeOf(d) * 0.55)
-  .pointLabel(d => `<div style="font-family:monospace;font-size:11px;letter-spacing:1px"><b style="color:${colorOf(d)}">${d.name}</b><br><span style="color:#5b6b78;font-size:9px;text-transform:uppercase;letter-spacing:2px">${zones[d.zone].name}</span></div>`)
+  .pointAltitude(d => sizeOf(d) * 0.6)
+  .pointRadius(d => sizeOf(d) * 1.15)   // bigger hit targets
+  .pointLabel(d => `<div style="font-family:monospace;font-size:11px;letter-spacing:1px"><b style="color:${colorOf(d)}">${esc(d.name)}</b><br><span style="color:#5b6b78;font-size:9px;text-transform:uppercase;letter-spacing:2px">${d._isZone ? "ZONE HUB" : (zoneOf[d.zone] ? zoneOf[d.zone].name : "")}</span></div>`)
   .onPointClick(d => openDetail(d))
   .onPointHover(h => {
+    document.getElementById('globe').style.cursor = h ? 'pointer' : 'grab';
     const tip = document.getElementById('tip');
     if (h) {
       tip.style.display = 'block';
-      tip.innerHTML = `<div class="t" style="color:${colorOf(h)}">${h.name}</div><div class="s">${zones[h.zone].name}</div>`;
+      tip.innerHTML = `<div class="t" style="color:${colorOf(h)}">${esc(h.name)}</div><div class="s">${h._isZone ? "ZONE HUB — click for services" : (zoneOf[h.zone] ? zoneOf[h.zone].name : "SERVICE")}</div>`;
     } else tip.style.display = 'none';
   });
 
 globe.controls().autoRotate = true;
-globe.controls().autoRotateSpeed = 0.5;
+globe.controls().autoRotateSpeed = 0.45;
 globe.controls().addEventListener('start', () => { globe.controls().autoRotate = false; });
 
-// pulse
+// subtle pulse (no re-render storm)
 const pulse = () => {
   const t = Date.now() / 1000;
-  globe.pointAltitude(d => sizeOf(d) * (0.6 + 0.4 * Math.sin(t * 2 + d.id.length)));
-  requestAnimationFrame(pulse);
+  globe.pointAltitude(d => sizeOf(d) * (0.5 + 0.22 * Math.sin(t * 1.6 + d.id.length)));
+  setTimeout(pulse, 600);
 };
-pulse();
+setTimeout(pulse, 800);
 
-// open detail
-const openDetail = s => {
-  const z = zones[s.zone];
-  const ep = (s.endpoints || []).map(e => `<div class="kv"><span class="k">Path</span><span class="v">${e}</span></div>`).join("");
-  const dns = (s.dns || []).map(d => `<div class="kv"><span class="k">DNS</span><span class="v">${d}</span></div>`).join("");
-  const keys = (s.keys || []).map(k => `<div class="kv"><span class="k">Key</span><span class="v" style="color:var(--accent2)">${k}</span></div>`).join("");
-  document.getElementById('detail-body').innerHTML = `
-    <div class="dt">${s.name}</div>
-    <div class="dz" style="color:${z.color}">${z.name}</div>
-    <div class="kv"><span class="k">Role</span><span class="v">${s.role}</span></div>
-    <div class="kv"><span class="k">Note</span><span class="v">${s.note || "—"}</span></div>
-    <div class="kv"><span class="k">Loc</span><span class="v">${s._lat.toFixed(2)}, ${s._lng.toFixed(2)}</span></div>
-    ${ep}${dns}${keys}`;
+// ---- detail panel (defensive: never throws) ----
+const openDetail = p => {
+  const body = document.getElementById('detail-body');
+  const zone = (p._isZone ? zoneOf[p.id] : zoneOf[p.zone]) || {};
+  const zname = p._isZone ? p.name : (zone.name || "—");
+  const zcolor = p._isZone ? p.color : (zone.color || "#94a3b8");
+  let html = `<div class="dt">${esc(p.name)}</div><div class="dz" style="color:${zcolor}">${p._isZone ? "ZONE HUB" : zname}</div>`;
+  html += `<div class="kv"><span class="k">Role</span><span class="v">${esc(p.role || "—")}</span></div>`;
+  if (p.note) html += `<div class="kv"><span class="k">Note</span><span class="v">${esc(p.note)}</span></div>`;
+  if (!p._isZone) {
+    html += `<div class="kv"><span class="k">Loc</span><span class="v">${p._lat.toFixed(2)}, ${p._lng.toFixed(2)}</span></div>`;
+    (p.endpoints || []).forEach(e => html += `<div class="kv"><span class="k">Path</span><span class="v">${esc(e)}</span></div>`);
+    (p.dns || []).forEach(d => html += `<div class="kv"><span class="k">DNS</span><span class="v">${esc(d)}</span></div>`);
+    (p.keys || []).forEach(k => html += `<div class="kv"><span class="k">Key</span><span class="v" style="color:var(--accent2)">${esc(k)}</span></div>`);
+  } else {
+    const members = services.filter(s => s.zone === p.id);
+    html += `<div class="kv"><span class="k">Services</span><span class="v">${members.length}</span></div>`;
+    html += `<div class="p-sec" style="margin-top:10px;color:var(--accent);font-size:9px;letter-spacing:2px">SERVICES IN ZONE — click to inspect</div>`;
+    members.forEach(m => {
+      html += `<div class="member" data-id="${m.id}">${esc(m.name)}<div class="r">${esc(m.role || "")}</div></div>`;
+    });
+  }
+  body.innerHTML = html;
+  body.querySelectorAll('.member').forEach(el => {
+    el.onclick = () => openDetail(services.find(s => s.id === el.dataset.id));
+  });
   document.getElementById('detail').style.display = 'block';
 };
 
 // legend + stats
 document.getElementById('zone-list').innerHTML = ARCHIVE.zones.map(z =>
-  `<div><i style="color:${z.color};background:${z.color}"></i><span><b style="color:var(--text)">${z.name.split("//")[0].trim()}</b> — ${z.name.split("//")[1] || ""}</span></div>`).join("");
+  `<div><i style="color:${z.color};background:${z.color}"></i><span><b style="color:var(--text)">${esc(z.name.split("//")[0].trim())}</b> — ${esc(z.name.split("//")[1] || "")}</span></div>`).join("");
 document.getElementById('st-s').textContent = services.length;
 document.getElementById('st-z').textContent = ARCHIVE.zones.length;
 document.getElementById('st-l').textContent = links.length;
@@ -240,8 +278,8 @@ document.getElementById('st-l').textContent = links.length;
 // search filter
 document.getElementById('search').addEventListener('input', e => {
   const q = e.target.value.toLowerCase().trim();
-  const vis = services.filter(s => !q || s.name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q));
-  globe.pointsData(vis).pointRadius(d => sizeOf(d) * 0.55);
+  const vis = allPoints.filter(p => !q || p.name.toLowerCase().includes(q) || (p.role || "").toLowerCase().includes(q));
+  globe.pointsData(vis).pointRadius(d => sizeOf(d) * 1.15);
   document.getElementById('noresults').style.display = vis.length ? 'none' : 'block';
 });
 
